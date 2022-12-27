@@ -61,7 +61,7 @@ def dbquery_stocksplit(date,code,ca,ratio,list_broker):
 	else:
 		raise Exception("Unidentified Corporate Action. Stock Split: ss, Reverse Stock Split: rs")
 	
-	list_pair = f"""
+	list_pair_stockdata = f"""
 				previous = previous{d}{ratio},
 				openprice = openprice{d}{ratio},
 				firsttrade = firsttrade{d}{ratio},
@@ -82,25 +82,26 @@ def dbquery_stocksplit(date,code,ca,ratio,list_broker):
 				nonregularvolume = nonregularvolume{t}{ratio}
 	"""
 
-	for broker in list_broker:
-		list_pair += f""",
-					broker_{broker}_bavg = broker_{broker}_bavg{d}{ratio},
-					broker_{broker}_bvol = broker_{broker}_bvol{t}{ratio},
-					broker_{broker}_savg = broker_{broker}_savg{d}{ratio},
-					broker_{broker}_svol = broker_{broker}_svol{t}{ratio}
+	list_pair_stocktransaction = f"""
+				bvol = bvol{t}{ratio},
+				svol = svol{t}{ratio}
 		"""
 
 	sql = f"""
-			UPDATE stockdata_{code}
-			SET {list_pair}
-			WHERE date < {date_str};
+			UPDATE stockdata
+			SET {list_pair_stockdata}
+			WHERE date < {date_str} AND code = '{code}';
+
+			UPDATE stocktransaction
+			SET {list_pair_stocktransaction}
+			WHERE date < {date_str} AND code = '{code}';
 	"""
 	return sql
 # =================================================================================================
 # QUANTIST FUNCTION
 # =================================================================================================
 def quantist_connect():
-	with open("credentials\credentials.json","r") as f:
+	with open("credentials/credentials.json","r") as f:
 		credentials = json.load(f)
 		pg_db_name = credentials["pg_db_name"]
 		pg_user = credentials["pg_user"]
@@ -111,7 +112,7 @@ def quantist_connect():
 		conn,cur = create_connection(conninfo)
 	return conn,cur
 
-def quantist_stocksplit_transformer():
+def quantist_stocksplit_transformer(execution: str = "sql"):
 	start = time.time()
 	# READ CSV FOR LIST OF STOCKSPLIT
 	# FORMAT: date,code,ca,ratio
@@ -131,7 +132,15 @@ def quantist_stocksplit_transformer():
 		sql = dbquery_stocksplit(row["date"],row["code"],row["ca"],row["ratio"],list_broker)
 		# EXECUTE QUERY
 		print(f"Execute UPDATE (Reverse) Stock Split for {row['code']}")
-		execute(conn,cur,sql)
+		
+		if execution == "postgresql":
+			# Execute sql statement
+			execute(conn,cur,sql)
+		else:
+			# Write sql statement to sql file with code as filename
+			with open(f"sql/{row['code']}.sql","w") as f:
+				f.write(sql)
+
 	total = time.time() - start
 	conn.close()
 	print(f"""ALL DONE for {total} seconds""")
